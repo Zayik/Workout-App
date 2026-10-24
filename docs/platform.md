@@ -22,6 +22,14 @@ Decided 2026-10-23: build a web app (PWA) first, wrap it for the Google Play Sto
 - Web push works only once the app is added to the home screen (iOS 16.4+).
 - No Apple Health or Watch access from a web app.
 
+## App structure (2026-10-24)
+
+- **Today** (home): builds the day's workout from the rotation rules (`src/planner.ts`), in pairs plus 1-set add-ons, and logs sets with a rest timer.
+- **Explore**: muscle groups and their exercises; the interactive body map from the Muscle Map prototype goes here next.
+- **Progress**: logged sets by day for now.
+- Both Today and Explore open the same exercise page (photos, steps, tips, swaps).
+- Catalog and photos come from the project planning files via `scripts/import_catalog.py`. Photos are Free Exercise DB (public domain, Unlicense); 16 exercises have none yet. Before selling the app, replace them with art we own.
+
 ## Next steps
 
 1. **Cloud sync and login.** Recommended: Supabase (free tier: Postgres, email/Google login). Keep Dexie as the local store and sync the `sets` table to Supabase.

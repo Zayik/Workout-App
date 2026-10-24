@@ -1,66 +1,34 @@
-import { useLiveQuery } from 'dexie-react-hooks'
-import { useState, type FormEvent } from 'react'
-import { db } from './db'
+import { useState } from 'react'
+import { Explore } from './Explore'
+import { Progress } from './Progress'
+import { Today } from './Today'
+
+const TABS = [
+  { id: 'today', label: 'Today', icon: '◉' },
+  { id: 'explore', label: 'Explore', icon: '◎' },
+  { id: 'progress', label: 'Progress', icon: '▤' },
+] as const
+type Tab = (typeof TABS)[number]['id']
 
 function App() {
-  const sets = useLiveQuery(() => db.sets.orderBy('at').reverse().limit(50).toArray(), [])
-  const [exercise, setExercise] = useState('')
-  const [reps, setReps] = useState('')
-  const [weight, setWeight] = useState('')
-
-  async function addSet(e: FormEvent) {
-    e.preventDefault()
-    if (!exercise.trim() || !reps) return
-    await db.sets.add({
-      exercise: exercise.trim(),
-      reps: Number(reps),
-      weight: Number(weight) || 0,
-      at: Date.now(),
-    })
-    setReps('')
-  }
+  const [tab, setTab] = useState<Tab>('today')
 
   return (
-    <main>
-      <h1>Workout</h1>
-
-      <form onSubmit={addSet}>
-        <input
-          placeholder="Exercise"
-          value={exercise}
-          onChange={(e) => setExercise(e.target.value)}
-          aria-label="Exercise"
-        />
-        <input
-          placeholder="Reps"
-          inputMode="numeric"
-          value={reps}
-          onChange={(e) => setReps(e.target.value)}
-          aria-label="Reps"
-        />
-        <input
-          placeholder="lb"
-          inputMode="decimal"
-          value={weight}
-          onChange={(e) => setWeight(e.target.value)}
-          aria-label="Weight in pounds"
-        />
-        <button type="submit">Log set</button>
-      </form>
-
-      <ul>
-        {sets?.map((s) => (
-          <li key={s.id}>
-            <span>{s.exercise}</span>
-            <span>
-              {s.reps} × {s.weight ? `${s.weight} lb` : 'bodyweight'}
-            </span>
-            <time>{new Date(s.at).toLocaleString()}</time>
-          </li>
+    <>
+      <main>
+        {tab === 'today' && <Today />}
+        {tab === 'explore' && <Explore />}
+        {tab === 'progress' && <Progress />}
+      </main>
+      <nav className="tabs" aria-label="Sections">
+        {TABS.map((t) => (
+          <button key={t.id} className={tab === t.id ? 'on' : ''} onClick={() => setTab(t.id)} aria-current={tab === t.id ? 'page' : undefined}>
+            <span aria-hidden="true">{t.icon}</span>
+            {t.label}
+          </button>
         ))}
-      </ul>
-      {sets?.length === 0 && <p className="empty">No sets logged yet.</p>}
-    </main>
+      </nav>
+    </>
   )
 }
 
