@@ -13,6 +13,16 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
+      workbox: {
+        // Exercise photos are cached as they're viewed, so a workout's photos work offline after the first look.
+        runtimeCaching: [
+          {
+            urlPattern: ({ url }) => url.pathname.includes('/exercises/'),
+            handler: 'CacheFirst',
+            options: { cacheName: 'exercise-photos', expiration: { maxEntries: 300 } },
+          },
+        ],
+      },
       manifest: {
         name: 'Workout App',
         short_name: 'Workout',
