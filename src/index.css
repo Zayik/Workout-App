@@ -125,28 +125,6 @@ button.wide {
   margin: 2px 0 0;
 }
 
-.seg {
-  display: flex;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  overflow: hidden;
-  flex-shrink: 0;
-}
-
-.seg button {
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: var(--muted);
-  padding: 8px 12px;
-  font-size: 14px;
-}
-
-.seg button.on {
-  background: var(--accent);
-  color: #fff;
-}
-
 /* weekly status per group */
 .week {
   display: grid;
@@ -214,6 +192,19 @@ button.wide {
 
 .empty-day p {
   margin-bottom: 0;
+}
+
+.aim {
+  margin: 16px 0 0;
+}
+
+.full-line {
+  margin: 20px 0 0;
+  padding-top: 10px;
+  border-top: 2px dashed var(--good);
+  color: var(--good);
+  font-weight: 600;
+  text-align: center;
 }
 
 /* one exercise in a plan */

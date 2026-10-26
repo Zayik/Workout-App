@@ -19,7 +19,6 @@ export interface PlanItem {
 // One generated workout per day, kept so it doesn't reshuffle as sets are logged.
 export interface Plan {
   date: string // local YYYY-MM-DD
-  minutes: number
   pairs: PlanItem[][]
   addons: PlanItem[]
   seed: number

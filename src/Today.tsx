@@ -1,19 +1,12 @@
 import { useLiveQuery } from 'dexie-react-hooks'
-import { useEffect, useMemo, useState, type CSSProperties, type FormEvent } from 'react'
-import { exById, groups, imgUrl, repsLabel } from './catalog'
+import { Fragment, useEffect, useMemo, useState, type CSSProperties, type FormEvent } from 'react'
+import { ADDON_GROUPS, exById, groups, imgUrl, primaryGroups, repsLabel } from './catalog'
 import { ExerciseSheet } from './ExerciseSheet'
 import { db, dayKey, type Plan, type PlanItem, type SetLog } from './db'
-import { buildPlan, weekStatus, zone } from './planner'
+import { AIM_GROUPS, buildPlan, weekStatus, zone } from './planner'
 
 const DAY = 86_400_000
-
-function readMinutes() {
-  try {
-    return Number(localStorage.getItem('minutes')) || 45
-  } catch {
-    return 45
-  }
-}
+const ADDON = new Set(ADDON_GROUPS)
 
 export function Today() {
   const today = dayKey()
@@ -25,10 +18,10 @@ export function Today() {
   const [sheet, setSheet] = useState<string>()
   const [rest, setRest] = useState<{ until: number; next?: string }>()
 
-  async function newPlan(minutes: number, seed = Date.now()) {
+  async function newPlan(seed = Date.now()) {
     const all = await db.sets.where('at').above(Date.now() - 35 * DAY).toArray()
     const ps = await db.prefs.toArray()
-    const p = buildPlan({ logs: all, avoid: new Set(ps.filter((x) => x.avoid).map((x) => x.exId)), minutes, seed })
+    const p = buildPlan({ logs: all, avoid: new Set(ps.filter((x) => x.avoid).map((x) => x.exId)), seed })
     await db.plans.put(p)
     setActive(p.pairs[0]?.[0]?.exId)
   }
@@ -36,7 +29,7 @@ export function Today() {
   useEffect(() => {
     // plan is undefined while loading and when there's none yet; check the table directly.
     db.plans.get(today).then((p) => {
-      if (!p) newPlan(readMinutes(), 1)
+      if (!p) newPlan(1)
     })
   }, [today])
 
@@ -45,8 +38,14 @@ export function Today() {
   const status = weekStatus(logs)
   const doneToday = (exId: string) => logs.filter((s) => s.exId === exId && dayKey(s.at) === today)
   const order = [...plan.pairs.flat(), ...plan.addons]
-  const totalSets = order.reduce((n, i) => n + i.sets, 0)
-  const loggedSets = order.reduce((n, i) => n + Math.min(i.sets, doneToday(i.exId).length), 0)
+  // Groups that got a full-credit set today, out of the recommended number per session.
+  const hitToday = groups.filter((g) => !ADDON.has(g.id) && (status.today[g.id] ?? 0) >= 1).length
+  // The plan lists everything owed; mark where a full session ends.
+  let fullAt = -1
+  for (let i = 0, seen = new Set<string>(); i < plan.pairs.length && fullAt < 0; i++) {
+    for (const it of plan.pairs[i]) primaryGroups(exById.get(it.exId)!).forEach((g) => seen.add(g))
+    if (seen.size >= AIM_GROUPS) fullAt = i
+  }
 
   function nextAfter(item: PlanItem, pair: PlanItem[]) {
     const left = (i: PlanItem) => i.sets - doneToday(i.exId).length - (i === item ? 1 : 0)
@@ -74,15 +73,6 @@ export function Today() {
     await db.prefs.put({ exId, avoid: !avoid.has(exId) })
   }
 
-  const setMinutes = (m: number) => {
-    try {
-      localStorage.setItem('minutes', String(m))
-    } catch {
-      /* private mode: fine, just not remembered */
-    }
-    newPlan(m)
-  }
-
   return (
     <>
       <header className="page-head">
@@ -90,15 +80,8 @@ export function Today() {
           <h1>Today</h1>
           <p className="muted small">
             {new Date(`${today}T12:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })} ·{' '}
-            {loggedSets}/{totalSets} sets
+            {hitToday} of {AIM_GROUPS} groups
           </p>
-        </div>
-        <div className="seg" role="group" aria-label="Time available">
-          {[20, 45].map((m) => (
-            <button key={m} className={plan.minutes === m ? 'on' : ''} onClick={() => setMinutes(m)}>
-              {m} min
-            </button>
-          ))}
         </div>
       </header>
 
@@ -125,27 +108,39 @@ export function Today() {
         </div>
       )}
 
+      {order.length > 0 && (
+        <p className="small aim">
+          Aim for about {AIM_GROUPS} muscle groups today. Stop whenever you need to: anything you skip moves to the
+          top next time.
+        </p>
+      )}
+
       {plan.pairs.map((pair, pi) => (
-        <section key={pi} className="card">
-          <h2 className="pair-title">{pair.length > 1 ? `Pair ${pi + 1}` : `Exercise ${pi + 1}`}</h2>
-          {pair.length > 1 && <p className="muted small">Alternate: one set of each, rest about 60-90 s between.</p>}
-          {pair.map((item) => (
-            <ExerciseRow
-              key={item.exId}
-              item={item}
-              logs={logs}
-              done={doneToday(item.exId)}
-              open={active === item.exId}
-              onOpen={() => setActive(active === item.exId ? undefined : item.exId)}
-              onInfo={() => setSheet(item.exId)}
-              onLogged={() => {
-                const next = nextAfter(item, pair)
-                setRest({ until: Date.now() + (next && next !== item.exId ? 75 : 90) * 1000, next })
-                setActive(next)
-              }}
-            />
-          ))}
-        </section>
+        <Fragment key={pi}>
+          {pi === fullAt + 1 && fullAt >= 0 && (
+            <p className="full-line small">That's a full session. The rest is a bonus if you have energy.</p>
+          )}
+          <section className="card">
+            <h2 className="pair-title">{pair.length > 1 ? `Pair ${pi + 1}` : `Exercise ${pi + 1}`}</h2>
+            {pair.length > 1 && <p className="muted small">Alternate: one set of each, rest about 60-90 s between.</p>}
+            {pair.map((item) => (
+              <ExerciseRow
+                key={item.exId}
+                item={item}
+                logs={logs}
+                done={doneToday(item.exId)}
+                open={active === item.exId}
+                onOpen={() => setActive(active === item.exId ? undefined : item.exId)}
+                onInfo={() => setSheet(item.exId)}
+                onLogged={() => {
+                  const next = nextAfter(item, pair)
+                  setRest({ until: Date.now() + (next && next !== item.exId ? 75 : 90) * 1000, next })
+                  setActive(next)
+                }}
+              />
+            ))}
+          </section>
+        </Fragment>
       ))}
 
       {plan.addons.length > 0 && (
@@ -167,7 +162,7 @@ export function Today() {
         </section>
       )}
 
-      <button className="ghost wide" onClick={() => newPlan(plan.minutes)}>
+      <button className="ghost wide" onClick={() => newPlan()}>
         Shuffle today's workout
       </button>
 

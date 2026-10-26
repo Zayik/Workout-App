@@ -3,6 +3,7 @@ import {
   LOWER_GROUPS,
   exById,
   exercises,
+  groupById,
   groups,
   primaryGroups,
   type Exercise,
@@ -15,10 +16,13 @@ import { dayKey, type Plan, type PlanItem, type SetLog } from './db'
 // - compounds that clear the most owed groups first, then isolation for what's still short
 // - main compound per movement type stays put for ~4 weeks; isolation rotates
 // - pairs of moves that share no credited group; cuff, serratus and shins as 1-set add-ons
+// No time budget: the plan lists every owed group, most owed first, and the user stops whenever.
+// What's skipped stays owed and moves up next time.
 
 const DAY = 86_400_000
 const MAX_PER_SESSION = 3
-const SETS_FOR = { 20: 8, 45: 18 } as Record<number, number>
+// Recommended groups per session: 12 main groups, about twice a week each, over ~3 sessions.
+export const AIM_GROUPS = 8
 
 export interface WeekStatus {
   done: Record<string, number> // credited sets in the last 7 days
@@ -63,17 +67,9 @@ function jitter(seed: number, id: string) {
   return ((h >>> 0) % 1000) / 1000
 }
 
-function order(e: Exercise) {
-  const lower = primaryGroups(e).some((g) => LOWER_GROUPS.includes(g))
-  if (primaryGroups(e).includes('core')) return 3
-  if (e.type === 'C') return lower ? 0 : 1
-  return 2
-}
-
 export function buildPlan(opts: {
   logs: SetLog[]
   avoid: Set<string>
-  minutes: number
   seed: number
   now?: number
 }): Plan {
@@ -111,10 +107,11 @@ export function buildPlan(opts: {
   const score = (e: Exercise) => {
     let s = 0
     for (const [g, c] of Object.entries(e.credit)) {
-      if (!resting.has(g)) s += c * Math.min(1, need[g])
+      // Weighted by how far behind the group is, so the most owed groups come first.
+      if (!resting.has(g)) s += c * Math.min(1, need[g] / groupById.get(g)!.target)
     }
     if (s <= 0) return 0
-    if (e.type === 'C') s += mainLift[e.pattern] === e.id ? 0.6 : mainLift[e.pattern] ? -0.4 : 0.2
+    if (e.type === 'C') s += mainLift[e.pattern] === e.id ? 0.15 : mainLift[e.pattern] ? -0.4 : 0.1
     else if (lastUsed[e.id] && now - lastUsed[e.id] < 7 * DAY) s -= 0.3
     for (const g of primaryGroups(e)) {
       if (!weekPatterns[g]?.has(e.pattern)) s += 0.25
@@ -134,11 +131,10 @@ export function buildPlan(opts: {
 
   // Main work.
   const main: PlanItem[] = []
-  let budget = SETS_FOR[opts.minutes] ?? 18
   const pool = exercises.filter((e) => !primaryGroups(e).some((g) => ADDON_GROUPS.includes(g)))
-  while (budget > 0) {
+  for (;;) {
     let best: Exercise | undefined
-    let bestScore = 0.5
+    let bestScore = 0.1
     for (const e of pool) {
       if (main.some((i) => i.exId === e.id) || !fits(e)) continue
       const s = score(e)
@@ -149,9 +145,8 @@ export function buildPlan(opts: {
       ...Object.keys(best.credit).map((g) => (MAX_PER_SESSION - (session[g] ?? 0)) / best.credit[g]),
     )
     const want = Math.ceil(Math.max(...primaryGroups(best).map((g) => need[g])))
-    const sets = Math.max(1, Math.min(3, Math.floor(room), budget, Math.max(2, want)))
+    const sets = Math.max(1, Math.min(3, Math.floor(room), Math.max(2, want)))
     add(best, sets, main)
-    budget -= sets
   }
 
   // One-set add-ons for cuff, serratus and shins, least recently used first.
@@ -164,13 +159,15 @@ export function buildPlan(opts: {
     if (pick) add(pick, 1, addons)
   }
 
-  return { date: dayKey(now), minutes: opts.minutes, pairs: pairUp(main), addons, seed: opts.seed }
+  return { date: dayKey(now), pairs: pairUp(main), addons, seed: opts.seed }
 }
 
 // Pairs moves that share no credited group, best when upper + lower, then same equipment.
+// Pairs keep pick order (most owed first) so stopping early skips the least needed work;
+// order barely matters for growth (research/muscle-grouping-and-order.md).
 export function pairUp(items: PlanItem[]): PlanItem[][] {
   const ex = (i: PlanItem) => exById.get(i.exId)!
-  const left = [...items].sort((a, b) => order(ex(a)) - order(ex(b)))
+  const left = [...items]
   const pairs: PlanItem[][] = []
   while (left.length) {
     const a = left.shift()!
